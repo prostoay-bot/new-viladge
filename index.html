@@ -1,0 +1,1779 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Новогодняя деревня — Отгадай-ка</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  width:100%; height:100%; overflow:hidden;
+  font-family: 'Comic Sans MS', 'Comic Sans', 'Marker Felt', 'Segoe UI', system-ui, sans-serif;
+  background:#08112a;
+  user-select:none;
+  -webkit-user-select:none;
+}
+#game {
+  position:fixed; inset:0;
+  overflow:hidden;
+  cursor:none;
+  touch-action:none;
+}
+
+/* ===== Layers order =====
+   1 village SVG
+   2 frost canvas (top, erased)
+   3 snow particles canvas
+   4 items layer (clickable)
+  50 progress bar / hint
+  90 start screen
+ 100 modal
+ 200 finale
+9999 mitten
+*/
+.village {
+  position:absolute; inset:0;
+  z-index:1;
+  background: linear-gradient(180deg, #0d1b4d 0%, #1e3a8a 40%, #4a6db5 70%, #cfe8ff 100%);
+}
+.village svg { width:100%; height:100%; display:block; }
+
+.frost-canvas {
+  position:absolute; inset:0;
+  z-index:2;
+  touch-action:none;
+}
+
+.snow-canvas {
+  position:absolute; inset:0;
+  z-index:3;
+  pointer-events:none;
+}
+
+.items-layer {
+  position:absolute; inset:0;
+  z-index:4;
+  pointer-events:none;
+}
+.item {
+  position:absolute;
+  pointer-events:auto;
+  cursor:none;
+  border-radius:14%;
+  transition: transform .25s, filter .25s, box-shadow .25s;
+}
+.item:hover {
+  transform: scale(1.04);
+  filter: drop-shadow(0 0 18px rgba(255,220,120,.9));
+}
+.item.done::after {
+  content:'✓';
+  position:absolute; top:-12px; right:-12px;
+  width:34px; height:34px;
+  background:#4caf50;
+  color:#fff;
+  border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  font-size:22px; font-weight:bold;
+  box-shadow: 0 0 12px rgba(0,0,0,.5);
+  animation: pop .4s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes pop { 0%{transform:scale(0);} 70%{transform:scale(1.3);} 100%{transform:scale(1);} }
+
+/* ===== Start screen ===== */
+.start-screen {
+  position:absolute; inset:0;
+  z-index:90;
+  background: radial-gradient(circle at 50% 40%, rgba(40,70,140,.5), rgba(5,10,25,.95));
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  text-align:center;
+  color:#fff; padding:20px;
+}
+.start-screen h1 {
+  font-size: clamp(34px, 7vw, 78px);
+  margin-bottom: 18px;
+  text-shadow: 0 0 22px #aee0ff, 0 0 44px #5fa9d8, 0 4px 6px rgba(0,0,0,.4);
+  color: #d8f0ff;
+  animation: glow 2.5s ease-in-out infinite alternate;
+}
+@keyframes glow { from{text-shadow:0 0 18px #aee0ff, 0 0 36px #5fa9d8;} to{text-shadow:0 0 28px #fff, 0 0 52px #aee0ff, 0 0 80px #5fa9d8;} }
+.start-screen p {
+  font-size: clamp(15px, 2.1vw, 22px);
+  margin-bottom: 32px;
+  max-width: 620px;
+  line-height: 1.55;
+  opacity: 0.92;
+}
+.start-btn {
+  background: linear-gradient(180deg, #ff7a7a, #c92a2a);
+  color:#fff;
+  border: 4px solid #fff;
+  padding: 18px 54px;
+  font-size: clamp(20px, 2.6vw, 28px);
+  font-family: inherit;
+  font-weight: bold;
+  border-radius: 50px;
+  cursor: pointer;
+  box-shadow: 0 8px 22px rgba(0,0,0,.5), inset 0 2px 4px rgba(255,255,255,.4);
+  transition: transform .2s;
+  pointer-events:auto;
+}
+.start-btn:hover { transform: scale(1.05); }
+.start-btn:active { transform: scale(0.98); }
+
+/* ===== Mitten cursor ===== */
+.mitten {
+  position:fixed;
+  z-index:9999;
+  pointer-events:none;
+  width:84px; height:84px;
+  transform: translate(-28%, -72%);
+  will-change: left, top;
+  filter: drop-shadow(0 5px 8px rgba(0,0,0,.45));
+  transition: transform .08s;
+}
+.mitten.erase { transform: translate(-28%, -72%) rotate(-12deg) scale(.93); }
+
+/* ===== Progress bar ===== */
+.progress-bar {
+  position:fixed;
+  top: 12px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  background: rgba(10,20,50,.75);
+  padding: 9px 20px;
+  border-radius: 30px;
+  border: 2px solid rgba(255,255,255,.3);
+  color: #fff;
+  font-weight: bold;
+  font-size: 16px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display:none; align-items:center; gap: 12px;
+}
+.progress-bar.show { display:flex; }
+.progress-dots { display:flex; gap: 6px; }
+.dot { width: 12px; height: 12px; border-radius:50%; background: rgba(255,255,255,.3); transition: all .3s;}
+.dot.done { background: #4caf50; box-shadow: 0 0 10px #4caf50;}
+.dot.current { background: #ffeb3b; box-shadow: 0 0 10px #ffeb3b; transform: scale(1.3);}
+
+.erase-hint {
+  position:fixed;
+  bottom: 22px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  background: rgba(10,20,50,.78);
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 22px;
+  font-size: clamp(14px, 1.8vw, 18px);
+  border: 2px solid rgba(255,255,255,.3);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: opacity .6s;
+  pointer-events:none;
+  text-align:center;
+  max-width: 92vw;
+}
+.erase-hint.hide { opacity: 0; }
+
+/* ===== Ice modal ===== */
+.modal-backdrop {
+  position:fixed; inset:0;
+  background: radial-gradient(circle, rgba(20,40,80,.6), rgba(5,10,25,.88));
+  z-index:100;
+  display:flex; align-items:center; justify-content:center;
+  opacity:0; pointer-events:none;
+  transition: opacity .4s;
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  padding: 20px;
+}
+.modal-backdrop.active { opacity:1; pointer-events:auto; }
+
+.ice-modal {
+  position:relative;
+  background: linear-gradient(180deg, rgba(216,240,255,.97) 0%, rgba(174,224,255,.95) 100%);
+  border: 4px solid #ffffff;
+  border-radius: 26px;
+  padding: 50px 28px 22px;
+  max-width: 560px; width: 100%;
+  box-shadow: 0 0 55px rgba(95,169,216,.9), inset 0 0 30px rgba(255,255,255,.7);
+  transform: translateY(40px) scale(.7);
+  opacity:0;
+  transition: all .5s cubic-bezier(.34, 1.56, .64, 1);
+}
+.modal-backdrop.active .ice-modal { transform: translateY(0) scale(1); opacity:1; }
+
+/* Icicles row on top */
+.icicles {
+  position:absolute;
+  top:-6px; left:-4px; right:-4px;
+  height: 32px;
+  display:flex;
+  pointer-events:none;
+  overflow:visible;
+}
+.icicle {
+  flex:1;
+  height: 100%;
+  background: linear-gradient(180deg, rgba(216,240,255,.97), rgba(95,169,216,.85));
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  filter: drop-shadow(0 3px 3px rgba(95,169,216,.55));
+}
+.icicle:nth-child(odd) { height: 130%; }
+.icicle:nth-child(3n) { height: 150%; }
+.icicle:nth-child(4n) { height: 110%; }
+
+/* Snowflake corner decorations */
+.ice-modal::before, .ice-modal::after {
+  content:'';
+  position:absolute;
+  top: -22px;
+  width: 44px; height: 44px;
+  background: radial-gradient(circle, #fff 30%, #aee0ff 70%, #5fa9d8 100%);
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+  filter: drop-shadow(0 0 8px rgba(255,255,255,.8));
+}
+.ice-modal::before { left: -22px; }
+.ice-modal::after { right: -22px; }
+
+.q-title {
+  font-size: clamp(20px, 2.6vw, 28px);
+  color: #15456e;
+  text-align:center;
+  margin-bottom: 22px;
+  line-height: 1.4;
+  text-shadow: 0 1px 0 rgba(255,255,255,.7);
+}
+
+.q-options {
+  display:flex; flex-direction:column;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.opt-btn {
+  background: linear-gradient(180deg, #ffffff, #d8f0ff);
+  border: 3px solid #5fa9d8;
+  color: #15456e;
+  padding: 14px 22px;
+  font-size: clamp(16px, 2vw, 19px);
+  font-family: inherit;
+  font-weight: bold;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all .2s;
+  text-align: center;
+  box-shadow: 0 4px 0 rgba(95,169,216,.5);
+}
+.opt-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 0 rgba(95,169,216,.5); background: linear-gradient(180deg, #fff, #aee0ff);}
+.opt-btn:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 2px 0 rgba(95,169,216,.5);}
+.opt-btn.correct {
+  background: linear-gradient(180deg, #b9f6ca, #4caf50);
+  border-color:#2e7d32;
+  color: #1b5e20;
+  animation: correctPulse .5s;
+}
+.opt-btn.wrong {
+  background: linear-gradient(180deg, #ffcdd2, #e53935);
+  border-color:#c62828;
+  color: #fff;
+  animation: shake .4s;
+}
+@keyframes correctPulse { 0%,100%{transform:scale(1);} 50%{transform:scale(1.07);} }
+@keyframes shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-8px);} 75%{transform:translateX(8px);} }
+
+.modal-bottom {
+  display:flex; justify-content:center; align-items:center;
+  gap: 15px;
+  margin-top: 6px;
+}
+.hint-btn {
+  background: linear-gradient(180deg, #ffe082, #ffb300);
+  border: 3px solid #fff;
+  color: #5d4037;
+  padding: 10px 26px;
+  font-size: 17px;
+  font-family: inherit;
+  font-weight: bold;
+  border-radius: 30px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 rgba(255,179,0,.7);
+  transition: all .2s;
+}
+.hint-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 0 rgba(255,179,0,.7);}
+.hint-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.hint-text {
+  font-size: 16px;
+  color: #6a4a1a;
+  background: rgba(255,224,130,.55);
+  border: 2px dashed #ffb300;
+  border-radius: 12px;
+  padding: 10px 15px;
+  margin-top: 12px;
+  text-align:center;
+  display:none;
+  font-weight: bold;
+}
+.hint-text.show { display:block; animation: pop .35s cubic-bezier(.34,1.56,.64,1); }
+
+.progress {
+  text-align:center;
+  font-size: 14px;
+  color: #15456e;
+  margin-top: 12px;
+  font-weight:bold;
+  opacity:.8;
+}
+
+/* ===== Finale ===== */
+.finale {
+  position:fixed; inset:0;
+  z-index:200;
+  background:#000;
+  display:none;
+  align-items:center; justify-content:center;
+  flex-direction:column;
+  padding: 20px;
+}
+.finale.show { display:flex; }
+.finale-video {
+  position:relative;
+  width: 92vw; max-width: 1000px;
+  aspect-ratio: 16/9;
+  background: linear-gradient(180deg, #0a0a30, #1a1a5a);
+  border: 6px solid #fff;
+  border-radius: 16px;
+  overflow:hidden;
+  box-shadow: 0 0 80px rgba(255,200,100,.5), 0 0 120px rgba(255,150,80,.3);
+}
+.finale-canvas {
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  display:block;
+}
+.finale-title {
+  color:#fff;
+  margin-top: 16px;
+  text-align:center;
+  font-size: clamp(18px, 2.2vw, 24px);
+  text-shadow: 0 0 12px #aee0ff;
+}
+.finale-controls {
+  margin-top: 14px;
+  display:flex; gap:14px; flex-wrap:wrap; justify-content:center;
+}
+.finale-btn {
+  background: linear-gradient(180deg, #ff7a7a, #c92a2a);
+  color:#fff;
+  border: 3px solid #fff;
+  padding: 12px 30px;
+  font-size: 17px;
+  font-family: inherit;
+  font-weight: bold;
+  border-radius: 30px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 rgba(0,0,0,.4);
+  transition: transform .15s;
+}
+.finale-btn:hover { transform: translateY(-2px); }
+.finale-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 rgba(0,0,0,.4);}
+.finale-btn.green { background: linear-gradient(180deg, #66bb6a, #2e7d32); }
+
+/* Confetti */
+.confetti { position:fixed; pointer-events:none; z-index: 250;}
+
+@media (max-width: 600px) {
+  .mitten { width: 64px; height: 64px; }
+  .ice-modal { padding: 42px 18px 18px; }
+  .opt-btn { padding: 12px 16px; }
+}
+</style>
+</head>
+<body>
+<div id="game">
+
+  <!-- ===== VILLAGE (revealed under frost) ===== -->
+  <div class="village">
+    <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" id="villageSvg">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#0d1b4d"/>
+          <stop offset="40%" stop-color="#1e3a8a"/>
+          <stop offset="70%" stop-color="#4a6db5"/>
+          <stop offset="100%" stop-color="#8eb3e0"/>
+        </linearGradient>
+        <linearGradient id="snowGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#ffffff"/>
+          <stop offset="100%" stop-color="#cfe8ff"/>
+        </linearGradient>
+        <radialGradient id="moon" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#fff8e0"/>
+          <stop offset="70%" stop-color="#ffe9a8"/>
+          <stop offset="100%" stop-color="#ffd573"/>
+        </radialGradient>
+        <radialGradient id="lampGlow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#fff7c0"/>
+          <stop offset="40%" stop-color="rgba(255,235,120,0.55)"/>
+          <stop offset="100%" stop-color="rgba(255,235,120,0)"/>
+        </radialGradient>
+        <linearGradient id="house1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#c43e3e"/><stop offset="100%" stop-color="#8b1f1f"/></linearGradient>
+        <linearGradient id="house2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#5a8c3a"/><stop offset="100%" stop-color="#3a5e22"/></linearGradient>
+        <linearGradient id="house3" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#b06ad8"/><stop offset="100%" stop-color="#7030a0"/></linearGradient>
+        <linearGradient id="house4" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3fb8d8"/><stop offset="100%" stop-color="#1a7090"/></linearGradient>
+        <linearGradient id="roof" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#dce9f5"/></linearGradient>
+        <linearGradient id="treeGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3a8a3a"/><stop offset="100%" stop-color="#1a4a1a"/></linearGradient>
+        <linearGradient id="giftShopGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff9933"/><stop offset="100%" stop-color="#cc6600"/></linearGradient>
+      </defs>
+
+      <!-- Sky -->
+      <rect x="0" y="0" width="1600" height="900" fill="url(#sky)"/>
+
+      <!-- Stars -->
+      <g fill="#fff">
+        <circle cx="100" cy="80" r="2"/><circle cx="200" cy="120" r="1.5"/><circle cx="300" cy="60" r="2.5"/>
+        <circle cx="450" cy="100" r="1.8"/><circle cx="600" cy="70" r="2"/><circle cx="750" cy="130" r="1.5"/>
+        <circle cx="900" cy="90" r="2.2"/><circle cx="1100" cy="60" r="1.8"/><circle cx="1250" cy="120" r="2"/>
+        <circle cx="1400" cy="80" r="2.5"/><circle cx="1500" cy="140" r="1.5"/><circle cx="50" cy="200" r="1.5"/>
+        <circle cx="500" cy="180" r="1.5"/><circle cx="800" cy="200" r="2"/><circle cx="1200" cy="200" r="1.8"/>
+        <circle cx="160" cy="50" r="1.8"/><circle cx="380" cy="40" r="1.5"/><circle cx="620" cy="160" r="1.5"/>
+        <circle cx="970" cy="40" r="2"/><circle cx="1180" cy="160" r="1.5"/>
+        <!-- twinkling stars -->
+        <circle cx="240" cy="180" r="2"><animate attributeName="opacity" values="1;0.2;1" dur="2.5s" repeatCount="indefinite"/></circle>
+        <circle cx="560" cy="50" r="2"><animate attributeName="opacity" values="1;0.2;1" dur="3s" repeatCount="indefinite"/></circle>
+        <circle cx="1050" cy="180" r="2"><animate attributeName="opacity" values="1;0.2;1" dur="2.2s" repeatCount="indefinite"/></circle>
+        <circle cx="1450" cy="200" r="2"><animate attributeName="opacity" values="1;0.2;1" dur="2.8s" repeatCount="indefinite"/></circle>
+      </g>
+
+      <!-- Moon -->
+      <g>
+        <circle cx="1350" cy="180" r="70" fill="url(#moon)"/>
+        <circle cx="1330" cy="170" r="10" fill="rgba(255,200,100,0.4)"/>
+        <circle cx="1370" cy="200" r="6" fill="rgba(255,200,100,0.4)"/>
+        <circle cx="1340" cy="210" r="4" fill="rgba(255,200,100,0.3)"/>
+        <!-- moon glow -->
+        <circle cx="1350" cy="180" r="100" fill="rgba(255,235,170,0.15)"/>
+      </g>
+
+      <!-- Distant mountains -->
+      <path d="M0,650 L200,450 L350,550 L500,400 L700,520 L900,380 L1100,500 L1300,420 L1600,560 L1600,900 L0,900 Z" fill="#3a5a8a" opacity="0.65"/>
+      <path d="M0,720 L150,580 L300,650 L480,540 L650,640 L850,520 L1050,610 L1250,530 L1450,620 L1600,580 L1600,900 L0,900 Z" fill="#5a7aaa" opacity="0.55"/>
+      <!-- snow caps on mountains -->
+      <path d="M180,460 L200,450 L220,460 L240,455 L260,470 L350,550 L300,560 L260,540 L200,520 Z" fill="#fff" opacity="0.7"/>
+      <path d="M880,390 L900,380 L920,390 L940,400 L920,420 L880,400 Z" fill="#fff" opacity="0.7"/>
+
+      <!-- Snow ground -->
+      <path d="M0,760 Q400,720 800,750 T1600,740 L1600,900 L0,900 Z" fill="url(#snowGrad)"/>
+      <!-- Snow bumps -->
+      <ellipse cx="200" cy="800" rx="80" ry="14" fill="#fff" opacity="0.7"/>
+      <ellipse cx="800" cy="810" rx="120" ry="16" fill="#fff" opacity="0.7"/>
+      <ellipse cx="1300" cy="800" rx="100" ry="14" fill="#fff" opacity="0.7"/>
+
+      <!-- Background small trees -->
+      <g fill="#1a5a1a">
+        <polygon points="50,760 80,680 110,760"/>
+        <polygon points="120,765 150,690 180,765"/>
+        <polygon points="1450,770 1480,700 1510,770"/>
+        <polygon points="1520,765 1550,680 1580,765"/>
+        <polygon points="450,780 470,720 490,780"/>
+        <polygon points="500,790 520,740 540,790"/>
+        <polygon points="850,790 870,730 890,790"/>
+      </g>
+
+      <!-- Snowman -->
+      <g id="snowman">
+        <circle cx="180" cy="700" r="40" fill="#fff" stroke="#d0e0f0" stroke-width="2"/>
+        <circle cx="180" cy="650" r="30" fill="#fff" stroke="#d0e0f0" stroke-width="2"/>
+        <circle cx="180" cy="615" r="22" fill="#fff" stroke="#d0e0f0" stroke-width="2"/>
+        <circle cx="173" cy="610" r="3" fill="#000"/>
+        <circle cx="187" cy="610" r="3" fill="#000"/>
+        <polygon points="180,615 200,619 180,621" fill="#ff8c00"/>
+        <circle cx="174" cy="624" r="1.5" fill="#000"/>
+        <circle cx="180" cy="626" r="1.5" fill="#000"/>
+        <circle cx="186" cy="624" r="1.5" fill="#000"/>
+        <circle cx="180" cy="645" r="3" fill="#333"/>
+        <circle cx="180" cy="660" r="3" fill="#333"/>
+        <circle cx="180" cy="675" r="3" fill="#333"/>
+        <line x1="150" y1="650" x2="115" y2="615" stroke="#5d4037" stroke-width="3"/>
+        <line x1="120" y1="620" x2="115" y2="610" stroke="#5d4037" stroke-width="2"/>
+        <line x1="210" y1="650" x2="245" y2="615" stroke="#5d4037" stroke-width="3"/>
+        <line x1="240" y1="620" x2="245" y2="610" stroke="#5d4037" stroke-width="2"/>
+        <rect x="160" y="588" width="40" height="8" fill="#333"/>
+        <rect x="170" y="568" width="20" height="22" fill="#333"/>
+        <rect x="165" y="585" width="30" height="5" fill="#d32f2f"/>
+        <rect x="155" y="635" width="50" height="10" fill="#d32f2f"/>
+        <polygon points="205,640 222,665 210,668 200,645" fill="#d32f2f"/>
+      </g>
+
+      <!-- Gift shop -->
+      <g id="giftShop">
+        <rect x="280" y="620" width="160" height="140" fill="url(#giftShopGrad)" stroke="#8b4513" stroke-width="3"/>
+        <polygon points="270,620 360,560 450,620" fill="url(#roof)" stroke="#bbb" stroke-width="2"/>
+        <rect x="300" y="650" width="40" height="40" fill="#ffe082" stroke="#fff" stroke-width="2"/>
+        <rect x="380" y="650" width="40" height="40" fill="#ffe082" stroke="#fff" stroke-width="2"/>
+        <line x1="320" y1="650" x2="320" y2="690" stroke="#fff" stroke-width="1.5"/>
+        <line x1="300" y1="670" x2="340" y2="670" stroke="#fff" stroke-width="1.5"/>
+        <line x1="400" y1="650" x2="400" y2="690" stroke="#fff" stroke-width="1.5"/>
+        <line x1="380" y1="670" x2="420" y2="670" stroke="#fff" stroke-width="1.5"/>
+        <rect x="345" y="700" width="30" height="60" fill="#5d2f0a" stroke="#fff" stroke-width="2"/>
+        <circle cx="368" cy="730" r="2.5" fill="#ffeb3b"/>
+        <rect x="290" y="610" width="140" height="22" fill="#fff" stroke="#8b4513" stroke-width="2"/>
+        <text x="360" y="627" font-family="Comic Sans MS, cursive" font-size="16" font-weight="bold" fill="#cc6600" text-anchor="middle">ПОДАРКИ</text>
+        <!-- gift boxes outside -->
+        <g>
+          <rect x="290" y="755" width="22" height="22" fill="#e91e63" stroke="#fff" stroke-width="1.5"/>
+          <line x1="301" y1="755" x2="301" y2="777" stroke="#fff" stroke-width="2"/>
+          <line x1="290" y1="766" x2="312" y2="766" stroke="#fff" stroke-width="2"/>
+          <rect x="320" y="755" width="22" height="22" fill="#4caf50" stroke="#fff" stroke-width="1.5"/>
+          <line x1="331" y1="755" x2="331" y2="777" stroke="#fff" stroke-width="2"/>
+          <line x1="320" y1="766" x2="342" y2="766" stroke="#fff" stroke-width="2"/>
+          <rect x="425" y="755" width="22" height="22" fill="#ffeb3b" stroke="#fff" stroke-width="1.5"/>
+          <line x1="436" y1="755" x2="436" y2="777" stroke="#fff" stroke-width="2"/>
+          <line x1="425" y1="766" x2="447" y2="766" stroke="#fff" stroke-width="2"/>
+        </g>
+        <!-- string lights -->
+        <g>
+          <circle cx="290" cy="615" r="3" fill="#ff5252"><animate attributeName="fill" values="#ff5252;#ffeb3b;#448aff;#ff5252" dur="2s" repeatCount="indefinite"/></circle>
+          <circle cx="320" cy="600" r="3" fill="#ffeb3b"><animate attributeName="fill" values="#ffeb3b;#448aff;#ff5252;#ffeb3b" dur="2s" repeatCount="indefinite"/></circle>
+          <circle cx="360" cy="585" r="3" fill="#448aff"><animate attributeName="fill" values="#448aff;#ff5252;#ffeb3b;#448aff" dur="2s" repeatCount="indefinite"/></circle>
+          <circle cx="400" cy="600" r="3" fill="#69f0ae"><animate attributeName="fill" values="#69f0ae;#ff5252;#ffeb3b;#69f0ae" dur="2s" repeatCount="indefinite"/></circle>
+          <circle cx="430" cy="615" r="3" fill="#ff80ab"><animate attributeName="fill" values="#ff80ab;#ffeb3b;#448aff;#ff80ab" dur="2s" repeatCount="indefinite"/></circle>
+        </g>
+      </g>
+
+      <!-- Street lamp -->
+      <g id="lamp">
+        <rect x="525" y="600" width="10" height="170" fill="#3e2723"/>
+        <circle cx="530" cy="610" r="32" fill="url(#lampGlow)" opacity="0.75">
+          <animate attributeName="opacity" values="0.75;0.95;0.75" dur="3s" repeatCount="indefinite"/>
+        </circle>
+        <rect x="510" y="580" width="40" height="20" rx="5" fill="#5d4037" stroke="#fff" stroke-width="2"/>
+        <rect x="515" y="585" width="30" height="14" fill="#ffe082"/>
+        <!-- snow on top of lamp -->
+        <ellipse cx="530" cy="580" rx="20" ry="5" fill="#fff"/>
+      </g>
+
+      <!-- Big Christmas tree -->
+      <g id="tree">
+        <rect x="690" y="730" width="20" height="40" fill="#5d4037"/>
+        <polygon points="600,730 700,500 800,730" fill="url(#treeGrad)" stroke="#0a3a0a" stroke-width="2"/>
+        <polygon points="610,680 700,470 790,680" fill="url(#treeGrad)" stroke="#0a3a0a" stroke-width="2"/>
+        <polygon points="620,620 700,440 780,620" fill="url(#treeGrad)" stroke="#0a3a0a" stroke-width="2"/>
+        <polygon points="630,560 700,410 770,560" fill="url(#treeGrad)" stroke="#0a3a0a" stroke-width="2"/>
+        <!-- star on top -->
+        <polygon points="700,380 708,398 728,400 713,412 718,432 700,421 682,432 687,412 672,400 692,398" fill="#ffeb3b" stroke="#ff8c00" stroke-width="1.5">
+          <animateTransform attributeName="transform" type="rotate" from="0 700 410" to="360 700 410" dur="12s" repeatCount="indefinite"/>
+        </polygon>
+        <!-- ornaments -->
+        <g>
+          <circle cx="660" cy="700" r="6" fill="#ff5252" stroke="#fff" stroke-width="1"/>
+          <circle cx="730" cy="690" r="6" fill="#ffeb3b" stroke="#fff" stroke-width="1"/>
+          <circle cx="690" cy="650" r="6" fill="#448aff" stroke="#fff" stroke-width="1"/>
+          <circle cx="740" cy="640" r="6" fill="#ff80ab" stroke="#fff" stroke-width="1"/>
+          <circle cx="650" cy="620" r="6" fill="#69f0ae" stroke="#fff" stroke-width="1"/>
+          <circle cx="720" cy="600" r="6" fill="#ff5252" stroke="#fff" stroke-width="1"/>
+          <circle cx="680" cy="580" r="6" fill="#ffeb3b" stroke="#fff" stroke-width="1"/>
+          <circle cx="730" cy="560" r="6" fill="#448aff" stroke="#fff" stroke-width="1"/>
+          <circle cx="660" cy="540" r="6" fill="#ff80ab" stroke="#fff" stroke-width="1"/>
+          <circle cx="700" cy="500" r="6" fill="#69f0ae" stroke="#fff" stroke-width="1"/>
+          <circle cx="670" cy="470" r="5" fill="#ff5252" stroke="#fff" stroke-width="1"/>
+          <circle cx="710" cy="450" r="5" fill="#ffeb3b" stroke="#fff" stroke-width="1"/>
+        </g>
+        <!-- garland -->
+        <g fill="none" stroke="#ffd54f" stroke-width="2.5" stroke-dasharray="4 6">
+          <path d="M620,720 Q700,700 780,720"/>
+          <path d="M630,670 Q700,650 770,670"/>
+          <path d="M640,610 Q700,590 760,610"/>
+          <path d="M650,550 Q700,530 750,550"/>
+        </g>
+        <!-- twinkling lights -->
+        <g fill="#fff">
+          <circle cx="640" cy="715" r="2.5"><animate attributeName="fill" values="#ff5252;#ffeb3b;#448aff;#ff5252" dur="1.5s" repeatCount="indefinite"/></circle>
+          <circle cx="760" cy="715" r="2.5"><animate attributeName="fill" values="#ffeb3b;#448aff;#ff5252;#ffeb3b" dur="1.7s" repeatCount="indefinite"/></circle>
+          <circle cx="650" cy="665" r="2.5"><animate attributeName="fill" values="#448aff;#ff5252;#ffeb3b;#448aff" dur="1.9s" repeatCount="indefinite"/></circle>
+          <circle cx="750" cy="665" r="2.5"><animate attributeName="fill" values="#ff5252;#ffeb3b;#448aff;#ff5252" dur="2.1s" repeatCount="indefinite"/></circle>
+          <circle cx="660" cy="605" r="2.5"><animate attributeName="fill" values="#ffeb3b;#448aff;#ff5252;#ffeb3b" dur="2.3s" repeatCount="indefinite"/></circle>
+          <circle cx="740" cy="605" r="2.5"><animate attributeName="fill" values="#69f0ae;#ff5252;#ffeb3b;#69f0ae" dur="2s" repeatCount="indefinite"/></circle>
+        </g>
+      </g>
+
+      <!-- House: Ded Moroz -->
+      <g id="dedHouse">
+        <rect x="900" y="620" width="180" height="140" fill="url(#house1)" stroke="#5a0f0f" stroke-width="3"/>
+        <polygon points="885,620 990,540 1095,620" fill="url(#roof)" stroke="#bbb" stroke-width="2"/>
+        <g fill="#d8f0ff">
+          <polygon points="900,620 905,635 910,620"/>
+          <polygon points="930,620 935,640 940,620"/>
+          <polygon points="960,620 965,632 970,620"/>
+          <polygon points="990,620 995,638 1000,620"/>
+          <polygon points="1020,620 1025,630 1030,620"/>
+          <polygon points="1050,620 1055,640 1060,620"/>
+          <polygon points="1080,620 1085,632 1090,620"/>
+        </g>
+        <rect x="925" y="650" width="50" height="50" fill="#ffe082" stroke="#fff" stroke-width="2"/>
+        <line x1="950" y1="650" x2="950" y2="700" stroke="#fff" stroke-width="1.5"/>
+        <line x1="925" y1="675" x2="975" y2="675" stroke="#fff" stroke-width="1.5"/>
+        <rect x="947" y="685" width="6" height="10" fill="#fff"/>
+        <circle cx="950" cy="683" r="3" fill="#ff8c00"><animate attributeName="r" values="3;4;3" dur="0.6s" repeatCount="indefinite"/></circle>
+        <rect x="1000" y="680" width="40" height="80" fill="#3e2723" stroke="#fff" stroke-width="2"/>
+        <circle cx="1030" cy="720" r="3" fill="#ffeb3b"/>
+        <circle cx="1020" cy="695" r="10" fill="none" stroke="#2e7d32" stroke-width="4"/>
+        <circle cx="1020" cy="695" r="3" fill="#d32f2f"/>
+        <rect x="910" y="610" width="160" height="22" fill="#fff" stroke="#5a0f0f" stroke-width="1.5"/>
+        <text x="990" y="626" font-family="Comic Sans MS, cursive" font-size="14" font-weight="bold" fill="#8b1f1f" text-anchor="middle">Дом Деда Мороза</text>
+        <!-- chimney + smoke -->
+        <rect x="1040" y="555" width="20" height="30" fill="#5d4037"/>
+        <g opacity="0.6">
+          <circle cx="1050" cy="540" r="6" fill="#ccc"><animate attributeName="cy" values="540;520;500" dur="3s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.6;0.3;0" dur="3s" repeatCount="indefinite"/></circle>
+          <circle cx="1055" cy="545" r="5" fill="#ccc"><animate attributeName="cy" values="545;525;505" dur="3s" begin="1s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.6;0.3;0" dur="3s" begin="1s" repeatCount="indefinite"/></circle>
+          <circle cx="1045" cy="548" r="4" fill="#ccc"><animate attributeName="cy" values="548;528;508" dur="3s" begin="1.8s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.6;0.3;0" dur="3s" begin="1.8s" repeatCount="indefinite"/></circle>
+        </g>
+      </g>
+
+      <!-- Post office -->
+      <g id="postOffice">
+        <rect x="1150" y="620" width="160" height="140" fill="url(#house4)" stroke="#0a5070" stroke-width="3"/>
+        <polygon points="1140,620 1230,560 1320,620" fill="url(#roof)" stroke="#bbb" stroke-width="2"/>
+        <g fill="#d8f0ff">
+          <polygon points="1160,620 1165,635 1170,620"/>
+          <polygon points="1190,620 1195,640 1200,620"/>
+          <polygon points="1220,620 1225,632 1230,620"/>
+          <polygon points="1250,620 1255,638 1260,620"/>
+          <polygon points="1280,620 1285,630 1290,620"/>
+          <polygon points="1310,620 1315,635 1320,620"/>
+        </g>
+        <rect x="1170" y="650" width="40" height="40" fill="#ffe082" stroke="#fff" stroke-width="2"/>
+        <rect x="1250" y="650" width="40" height="40" fill="#ffe082" stroke="#fff" stroke-width="2"/>
+        <line x1="1190" y1="650" x2="1190" y2="690" stroke="#fff" stroke-width="1"/>
+        <line x1="1170" y1="670" x2="1210" y2="670" stroke="#fff" stroke-width="1"/>
+        <line x1="1270" y1="650" x2="1270" y2="690" stroke="#fff" stroke-width="1"/>
+        <line x1="1250" y1="670" x2="1290" y2="670" stroke="#fff" stroke-width="1"/>
+        <rect x="1215" y="700" width="30" height="60" fill="#3e2723" stroke="#fff" stroke-width="2"/>
+        <rect x="1180" y="745" width="22" height="32" fill="#d32f2f" stroke="#fff" stroke-width="1.5"/>
+        <rect x="1183" y="750" width="16" height="6" fill="#3e2723"/>
+        <rect x="1160" y="610" width="140" height="22" fill="#fff" stroke="#0a5070" stroke-width="1.5"/>
+        <text x="1230" y="626" font-family="Comic Sans MS, cursive" font-size="16" font-weight="bold" fill="#1a7090" text-anchor="middle">ПОЧТА</text>
+        <!-- envelope decoration -->
+        <g>
+          <rect x="1300" y="755" width="26" height="18" fill="#fff" stroke="#5d4037" stroke-width="1.5"/>
+          <polygon points="1300,755 1313,765 1326,755" fill="none" stroke="#5d4037" stroke-width="1.5"/>
+        </g>
+      </g>
+
+      <!-- Decorative purple house -->
+      <g id="houseDecor">
+        <rect x="1330" y="640" width="140" height="120" fill="url(#house3)" stroke="#4a2070" stroke-width="3"/>
+        <polygon points="1320,640 1400,580 1480,640" fill="url(#roof)" stroke="#bbb" stroke-width="2"/>
+        <rect x="1360" y="670" width="35" height="35" fill="#ffe082" stroke="#fff" stroke-width="2"/>
+        <rect x="1410" y="670" width="35" height="35" fill="#ffe082" stroke="#fff" stroke-width="2"/>
+        <rect x="1385" y="720" width="30" height="40" fill="#3e2723" stroke="#fff" stroke-width="2"/>
+        <g fill="#d8f0ff">
+          <polygon points="1335,640 1340,652 1345,640"/>
+          <polygon points="1365,640 1370,655 1375,640"/>
+          <polygon points="1395,640 1400,650 1405,640"/>
+          <polygon points="1425,640 1430,652 1435,640"/>
+          <polygon points="1455,640 1460,650 1465,640"/>
+        </g>
+      </g>
+
+      <!-- Path through snow -->
+      <path d="M0,820 Q800,790 1600,820" stroke="rgba(255,255,255,0.35)" stroke-width="30" fill="none"/>
+
+      <!-- Footprints -->
+      <g fill="rgba(100,150,200,0.3)">
+        <ellipse cx="400" cy="830" rx="4" ry="6"/>
+        <ellipse cx="410" cy="840" rx="4" ry="6"/>
+        <ellipse cx="420" cy="830" rx="4" ry="6"/>
+        <ellipse cx="430" cy="840" rx="4" ry="6"/>
+        <ellipse cx="900" cy="825" rx="4" ry="6"/>
+        <ellipse cx="910" cy="835" rx="4" ry="6"/>
+      </g>
+
+      <!-- Little snow piles near houses -->
+      <ellipse cx="990" cy="775" rx="60" ry="10" fill="#fff" opacity="0.6"/>
+      <ellipse cx="1230" cy="775" rx="60" ry="10" fill="#fff" opacity="0.6"/>
+      <ellipse cx="360" cy="775" rx="60" ry="10" fill="#fff" opacity="0.6"/>
+    </svg>
+  </div>
+
+  <!-- ===== FROST CANVAS (top layer to erase) ===== -->
+  <canvas class="frost-canvas" id="frost"></canvas>
+
+  <!-- ===== SNOW PARTICLES ===== -->
+  <canvas class="snow-canvas" id="snow"></canvas>
+
+  <!-- ===== ITEMS LAYER ===== -->
+  <div class="items-layer" id="itemsLayer"></div>
+
+  <!-- ===== Progress ===== -->
+  <div class="progress-bar" id="progressBar">
+    <span id="progressText">Найдено: 0 / 6</span>
+    <div class="progress-dots" id="progressDots"></div>
+  </div>
+
+  <!-- ===== Erase hint ===== -->
+  <div class="erase-hint" id="eraseHint">Вооружись варежкой и разотри мороз — найди праздничную деревню!</div>
+
+  <!-- ===== Mitten cursor ===== -->
+  <svg class="mitten" id="mitten" viewBox="0 0 100 100">
+    <defs>
+      <linearGradient id="mittenGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#ff6b6b"/>
+        <stop offset="100%" stop-color="#b71c1c"/>
+      </linearGradient>
+      <linearGradient id="cuffGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#ffffff"/>
+        <stop offset="100%" stop-color="#d8d8d8"/>
+      </linearGradient>
+    </defs>
+    <path d="M 30 50 Q 30 22 50 22 Q 70 22 70 50 L 70 78 L 30 78 Z" fill="url(#mittenGrad)" stroke="#7a0e0e" stroke-width="2.5"/>
+    <path d="M 30 50 Q 16 50 16 62 Q 16 74 30 74 Z" fill="url(#mittenGrad)" stroke="#7a0e0e" stroke-width="2.5"/>
+    <rect x="28" y="74" width="44" height="14" fill="url(#cuffGrad)" stroke="#7a0e0e" stroke-width="2" rx="3"/>
+    <!-- snowflake decoration -->
+    <g transform="translate(50,52)" stroke="#fff" stroke-width="1.6" fill="none">
+      <line x1="-9" y1="0" x2="9" y2="0"/>
+      <line x1="0" y1="-9" x2="0" y2="9"/>
+      <line x1="-6.5" y1="-6.5" x2="6.5" y2="6.5"/>
+      <line x1="-6.5" y1="6.5" x2="6.5" y2="-6.5"/>
+      <circle cx="0" cy="0" r="2" fill="#fff"/>
+      <!-- little branches -->
+      <line x1="-6" y1="-2" x2="-8" y2="-4"/>
+      <line x1="-6" y1="2" x2="-8" y2="4"/>
+      <line x1="6" y1="-2" x2="8" y2="-4"/>
+      <line x1="6" y1="2" x2="8" y2="4"/>
+    </g>
+  </svg>
+
+  <!-- ===== Ice modal ===== -->
+  <div class="modal-backdrop" id="modal">
+    <div class="ice-modal">
+      <div class="icicles" id="icicles"></div>
+      <h2 class="q-title" id="qTitle"></h2>
+      <div class="q-options" id="qOptions"></div>
+      <div class="hint-text" id="hintText"></div>
+      <div class="modal-bottom">
+        <button class="hint-btn" id="hintBtn">Подсказка</button>
+      </div>
+      <div class="progress" id="modalProgress"></div>
+    </div>
+  </div>
+
+  <!-- ===== Finale video ===== -->
+  <div class="finale" id="finale">
+    <div class="finale-video">
+      <canvas class="finale-canvas" id="finaleCanvas"></canvas>
+    </div>
+    <div class="finale-title" id="finaleTitle">С Новым Годом! Ты прошёл все загадки!</div>
+    <div class="finale-controls">
+      <button class="finale-btn" id="replayBtn">Посмотреть снова</button>
+      <button class="finale-btn green" id="restartBtn">Играть ещё раз</button>
+    </div>
+  </div>
+
+  <!-- ===== Start screen ===== -->
+  <div class="start-screen" id="startScreen">
+    <h1>Новогодняя деревня</h1>
+    <p>Игра «Отгадай-ка» для малышей 4–6 лет.<br>Замёрзший город скрывает праздничную деревню! Надень варежку, сотри морозную корку и найди все предметы. Отгадай загадки и получи новогодний сюрприз!</p>
+    <button class="start-btn" id="startBtn">Начать игру</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  // ====== Questions for kids 4–6 ======
+  const ITEMS = [
+    { id:'tree',       title:'Загадка про ёлочку',
+      q:'Что наряжают на Новый год?',
+      options:['Ёлочка','Пенёк','Цветок'], correct:0,
+      hint:'Она зелёная, колючая и пушистая, а на макушке — звезда!' },
+    { id:'dedHouse',   title:'Загадка про Деда Мороза',
+      q:'Кто приносит детям подарки на Новый год?',
+      options:['Дед Мороз','Баба Яга','Карлсон'], correct:0,
+      hint:'У него красная шуба и белая борода.' },
+    { id:'snowman',    title:'Загадка про снеговика',
+      q:'Из чего лепят снеговика?',
+      options:['Из снега','Из песка','Из глины'], correct:0,
+      hint:'Он белый, холодный и тает от тепла.' },
+    { id:'lamp',       title:'Загадка про фонарь',
+      q:'Что освещает дорогу зимним вечером?',
+      options:['Фонарь','Солнце','Луна'], correct:0,
+      hint:'Он стоит на столбе и светит жёлтым светом.' },
+    { id:'postOffice', title:'Загадка про почту',
+      q:'Кому дети пишут письма перед Новым годом?',
+      options:['Деду Морозу','Бабушке','Медведю'], correct:0,
+      hint:'В письме пишут, какие подарки хочешь получить.' },
+    { id:'giftShop',   title:'Загадка про подарки',
+      q:'Что дарят друг другу на Новый год?',
+      options:['Подарки','Камни','Тетрадки'], correct:0,
+      hint:'Их кладут под ёлку и разворачивают в полночь.' }
+  ];
+
+  // Clickable areas in SVG viewBox coords (1600x900)
+  const ITEM_AREAS = {
+    tree:       { x: 600, y: 380, w: 200, h: 390 },
+    dedHouse:   { x: 885, y: 540, w: 220, h: 230 },
+    snowman:    { x: 130, y: 588, w: 120, h: 160 },
+    lamp:       { x: 495, y: 580, w: 70, h: 200 },
+    postOffice: { x: 1140, y: 560, w: 200, h: 220 },
+    giftShop:   { x: 270, y: 560, w: 200, h: 220 }
+  };
+
+  const state = {
+    started:false,
+    revealed:false,
+    done:new Set(),
+    currentItem:null
+  };
+
+  // ====== DOM ======
+  const $ = id => document.getElementById(id);
+  const game = $('game');
+  const frost = $('frost');
+  const snow = $('snow');
+  const mitten = $('mitten');
+  const modal = $('modal');
+  const itemsLayer = $('itemsLayer');
+  const eraseHint = $('eraseHint');
+  const progressBar = $('progressBar');
+  const progressText = $('progressText');
+  const progressDots = $('progressDots');
+  const finale = $('finale');
+  const startScreen = $('startScreen');
+
+  // ====== Audio (Web Audio API) ======
+  let audioCtx = null;
+  function ensureAudio(){
+    if (!audioCtx){
+      try { audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }
+      catch(e){ audioCtx = null; }
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  function tone(freq, dur, type, vol){
+    if (!audioCtx) return;
+    type = type || 'sine'; vol = vol||0.18;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(vol, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + dur);
+  }
+  function sClick(){ tone(880, 0.06, 'square', 0.1); }
+  function sCorrect(){ tone(523,0.1); setTimeout(()=>tone(659,0.1),100); setTimeout(()=>tone(784,0.25),200); }
+  function sWrong(){ tone(180,0.22,'sawtooth',0.14); }
+  function sReveal(){ tone(330,0.15); setTimeout(()=>tone(440,0.15),140); setTimeout(()=>tone(554,0.15),280); setTimeout(()=>tone(659,0.4),420); }
+  function sFirework(){ tone(80+Math.random()*220, 0.4, 'triangle', 0.12); setTimeout(()=>tone(1200+Math.random()*400, 0.15, 'sine', 0.06), 100); }
+
+  // ====== Canvas setup ======
+  function resize(){
+    const w = window.innerWidth, h = window.innerHeight;
+    frost.width = w; frost.height = h;
+    snow.width = w; snow.height = h;
+    drawFrostScene();
+    initSnow();
+    positionItems();
+  }
+
+  // ====== Draw frozen city on frost canvas ======
+  function drawFrostScene(){
+    const ctx = frost.getContext('2d', { willReadFrequently: true });
+    const w = frost.width, h = frost.height;
+    ctx.clearRect(0,0,w,h);
+
+    // Cold night sky gradient
+    const sky = ctx.createLinearGradient(0,0,0,h);
+    sky.addColorStop(0, '#162042');
+    sky.addColorStop(0.5, '#28365c');
+    sky.addColorStop(1, '#4a5a82');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0,0,w,h);
+
+    // Cold pale moon
+    const mr = Math.max(20, Math.min(w,h)*0.07);
+    const mx = w*0.85, my = h*0.18;
+    const moonG = ctx.createRadialGradient(mx, my, 4, mx, my, mr);
+    moonG.addColorStop(0, '#cdd8ff');
+    moonG.addColorStop(1, '#7a8db8');
+    ctx.fillStyle = moonG;
+    ctx.beginPath(); ctx.arc(mx, my, mr, 0, Math.PI*2); ctx.fill();
+
+    // Cold stars
+    ctx.fillStyle = 'rgba(220,235,255,0.6)';
+    for (let i=0;i<90;i++){
+      const x = Math.random()*w, y = Math.random()*h*0.55, r = Math.random()*1.4+0.5;
+      ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    }
+
+    // Frozen city silhouettes
+    drawFrozenCity(ctx, w, h);
+
+    // Snow ground
+    ctx.fillStyle = '#cfdcec';
+    ctx.beginPath();
+    ctx.moveTo(0, h*0.78);
+    ctx.bezierCurveTo(w*0.3, h*0.75, w*0.7, h*0.80, w, h*0.76);
+    ctx.lineTo(w, h);
+    ctx.lineTo(0, h);
+    ctx.closePath();
+    ctx.fill();
+
+    // ===== Icy frost overlay (the layer to erase) =====
+    const frostG = ctx.createLinearGradient(0,0,0,h);
+    frostG.addColorStop(0, 'rgba(180,220,255,0.88)');
+    frostG.addColorStop(0.5, 'rgba(200,230,255,0.82)');
+    frostG.addColorStop(1, 'rgba(225,240,255,0.75)');
+    ctx.fillStyle = frostG;
+    ctx.fillRect(0,0,w,h);
+
+    // Ice crystal pattern (snowflakes)
+    drawIceCrystals(ctx, w, h);
+
+    // Frost speckle
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    for (let i=0;i<180;i++){
+      const x = Math.random()*w, y = Math.random()*h, r = Math.random()*2+0.6;
+      ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    }
+
+    // Fog band at bottom
+    const fogG = ctx.createLinearGradient(0, h*0.6, 0, h);
+    fogG.addColorStop(0, 'rgba(200,220,240,0)');
+    fogG.addColorStop(1, 'rgba(225,238,252,0.55)');
+    ctx.fillStyle = fogG;
+    ctx.fillRect(0, h*0.6, w, h*0.4);
+
+    // "Замёрзший город" label hint at top
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
+    ctx.font = 'bold 18px "Comic Sans MS", cursive';
+    ctx.textAlign = 'center';
+    ctx.fillText('❄ Замёрзший город ❄', w/2, 30);
+  }
+
+  function drawFrozenCity(ctx, w, h){
+    const baseY = h*0.78;
+    const buildings = [
+      {x:0.02, w:0.09, h:0.28},
+      {x:0.13, w:0.06, h:0.18},
+      {x:0.21, w:0.10, h:0.32},
+      {x:0.33, w:0.07, h:0.22},
+      {x:0.42, w:0.11, h:0.28},
+      {x:0.55, w:0.08, h:0.20},
+      {x:0.65, w:0.07, h:0.30},
+      {x:0.74, w:0.10, h:0.24},
+      {x:0.86, w:0.13, h:0.26}
+    ];
+    buildings.forEach(b=>{
+      const bx = b.x*w, bw = b.w*w, bh = b.h*h;
+      // body (dark cold)
+      ctx.fillStyle = '#26344f';
+      ctx.fillRect(bx, baseY-bh, bw, bh);
+      // snowy roof
+      ctx.fillStyle = '#cdd8e6';
+      ctx.beginPath();
+      ctx.moveTo(bx-3, baseY-bh);
+      ctx.lineTo(bx+bw/2, baseY-bh-10);
+      ctx.lineTo(bx+bw+3, baseY-bh);
+      ctx.closePath();
+      ctx.fill();
+      // dark icy windows (mostly unlit)
+      const cols = Math.max(2, Math.floor(bw/22));
+      const rows = Math.max(2, Math.floor(bh/30));
+      for (let i=0;i<cols;i++){
+        for (let j=0;j<rows;j++){
+          const wx = bx + 8 + i*(bw-16)/cols;
+          const wy = baseY - bh + 12 + j*(bh-20)/rows;
+          if (Math.random() > 0.75){
+            ctx.fillStyle = 'rgba(150,200,255,0.45)';
+          } else {
+            ctx.fillStyle = 'rgba(40,60,100,0.5)';
+          }
+          ctx.fillRect(wx, wy, 10, 12);
+        }
+      }
+      // icicles
+      ctx.fillStyle = 'rgba(220,235,250,0.85)';
+      const nIc = 5;
+      for (let i=0;i<nIc;i++){
+        const ix = bx + (i+0.5)*(bw/nIc);
+        const ih = 8 + Math.random()*12;
+        ctx.beginPath();
+        ctx.moveTo(ix-3, baseY-bh);
+        ctx.lineTo(ix+3, baseY-bh);
+        ctx.lineTo(ix, baseY-bh+ih);
+        ctx.closePath();
+        ctx.fill();
+      }
+    });
+  }
+
+  function drawIceCrystals(ctx, w, h){
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = 1;
+    for (let i=0;i<24;i++){
+      const cx = Math.random()*w, cy = Math.random()*h;
+      const size = 12 + Math.random()*22;
+      drawSnowflake(ctx, cx, cy, size);
+    }
+  }
+  function drawSnowflake(ctx, x, y, size){
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 1.3;
+    for (let i=0;i<6;i++){
+      ctx.rotate(Math.PI/3);
+      ctx.beginPath();
+      ctx.moveTo(0,0);
+      ctx.lineTo(0,size);
+      ctx.moveTo(0,size*0.55);
+      ctx.lineTo(-size*0.22, size*0.78);
+      ctx.moveTo(0,size*0.55);
+      ctx.lineTo(size*0.22, size*0.78);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ====== Erase interaction ======
+  let isErasing = false;
+  let lastErasedAt = 0;
+  const eraseRadius = Math.max(28, Math.min(window.innerWidth, window.innerHeight) * 0.045);
+
+  function getPos(e){
+    const rect = frost.getBoundingClientRect();
+    let cx, cy;
+    if (e.touches && e.touches[0]){
+      cx = e.touches[0].clientX; cy = e.touches[0].clientY;
+    } else {
+      cx = e.clientX; cy = e.clientY;
+    }
+    return { x: cx - rect.left, y: cy - rect.top, clientX: cx, clientY: cy };
+  }
+
+  function eraseAt(x, y){
+    const ctx = frost.getContext('2d', { willReadFrequently: true });
+    // Soft edge: gradient circle for natural look
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    const r = eraseRadius;
+    const grad = ctx.createRadialGradient(x, y, r*0.55, x, y, r);
+    grad.addColorStop(0, 'rgba(0,0,0,1)');
+    grad.addColorStop(0.7, 'rgba(0,0,0,0.7)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function onPointerDown(e){
+    if (!state.started) return;
+    if (state.currentItem) return;
+    isErasing = true;
+    mitten.classList.add('erase');
+    const p = getPos(e);
+    eraseAt(p.x, p.y);
+    spawnIceShards(p.clientX, p.clientY);
+    sClick();
+    checkReveal();
+  }
+  function onPointerMove(e){
+    if (!state.started) return;
+    const p = getPos(e);
+    mitten.style.left = p.clientX + 'px';
+    mitten.style.top = p.clientY + 'px';
+    if (isErasing && !state.currentItem){
+      eraseAt(p.x, p.y);
+      const now = performance.now();
+      if (now - lastErasedAt > 60){
+        spawnIceShards(p.clientX, p.clientY);
+        lastErasedAt = now;
+      }
+      checkReveal();
+    }
+  }
+  function onPointerUp(){
+    isErasing = false;
+    mitten.classList.remove('erase');
+  }
+
+  // ====== Reveal threshold check ======
+  let revealChecked = false;
+  function checkReveal(){
+    if (revealChecked) return;
+    const ctx = frost.getContext('2d', { willReadFrequently: true });
+    const w = frost.width, h = frost.height;
+    let transparent = 0, total = 0;
+    const step = 28;
+    try {
+      const img = ctx.getImageData(0, 0, w, h);
+      for (let y=0; y<h; y+=step){
+        for (let x=0; x<w; x+=step){
+          const idx = (y*w + x)*4;
+          if (img.data[idx+3] < 100) transparent++;
+          total++;
+        }
+      }
+    } catch(e){ /* ignore */ }
+    if (transparent/total > 0.22){
+      revealChecked = true;
+      state.revealed = true;
+      onVillageRevealed();
+    }
+  }
+
+  function onVillageRevealed(){
+    eraseHint.classList.add('hide');
+    sReveal();
+    // Fade remaining frost
+    setTimeout(()=>{
+      frost.style.transition = 'opacity 1.3s';
+      frost.style.opacity = '0.12';
+      frost.style.pointerEvents = 'none';
+    }, 200);
+    // Show progress
+    progressBar.classList.add('show');
+    renderProgress();
+    // Build clickable items
+    buildItems();
+    // Show next hint
+    setTimeout(()=>{
+      eraseHint.textContent = 'Молодец! Нажимай на предметы в деревне и отгадывай загадки.';
+      eraseHint.classList.remove('hide');
+      setTimeout(()=> eraseHint.classList.add('hide'), 6500);
+    }, 1400);
+  }
+
+  // ====== Items layer ======
+  function positionItems(){
+    const w = window.innerWidth, h = window.innerHeight;
+    const vbW = 1600, vbH = 900;
+    // meet: scale = min
+    const scale = Math.min(w/vbW, h/vbH);
+    const dispW = vbW*scale, dispH = vbH*scale;
+    const offsetX = (w - dispW)/2, offsetY = (h - dispH)/2;
+    Object.keys(ITEM_AREAS).forEach(id=>{
+      const el = document.getElementById('item-'+id);
+      if (!el) return;
+      const a = ITEM_AREAS[id];
+      el.style.left = (offsetX + a.x*scale) + 'px';
+      el.style.top = (offsetY + a.y*scale) + 'px';
+      el.style.width = (a.w*scale) + 'px';
+      el.style.height = (a.h*scale) + 'px';
+    });
+  }
+
+  function buildItems(){
+    itemsLayer.innerHTML = '';
+    ITEMS.forEach(it=>{
+      const div = document.createElement('div');
+      div.className = 'item';
+      div.id = 'item-'+it.id;
+      div.title = it.title;
+      div.addEventListener('click', ()=> openQuestion(it.id));
+      // Also handle touch
+      div.addEventListener('touchstart', e=>{ e.preventDefault(); openQuestion(it.id); }, {passive:false});
+      itemsLayer.appendChild(div);
+    });
+    positionItems();
+  }
+
+  function renderProgress(){
+    progressText.textContent = `Найдено: ${state.done.size} / ${ITEMS.length}`;
+    progressDots.innerHTML = '';
+    ITEMS.forEach(it=>{
+      const d = document.createElement('div');
+      d.className = 'dot' + (state.done.has(it.id) ? ' done' : '');
+      progressDots.appendChild(d);
+    });
+  }
+
+  // ====== Modal question ======
+  function openQuestion(itemId){
+    const it = ITEMS.find(i=>i.id===itemId);
+    if (!it) return;
+    if (state.done.has(itemId)) return; // already done
+    state.currentItem = itemId;
+    sClick();
+
+    $('qTitle').textContent = it.q;
+    $('hintText').classList.remove('show');
+    $('hintText').textContent = it.hint;
+    $('hintBtn').disabled = false;
+    $('hintBtn').textContent = 'Подсказка';
+
+    const opts = $('qOptions');
+    opts.innerHTML = '';
+    const order = shuffle([0,1,2]);
+    order.forEach(origIdx=>{
+      const btn = document.createElement('button');
+      btn.className = 'opt-btn';
+      btn.textContent = it.options[origIdx];
+      btn.onclick = ()=>{
+        if (origIdx === it.correct){
+          btn.classList.add('correct');
+          [...opts.children].forEach(b=> b.disabled = true);
+          sCorrect();
+          setTimeout(()=>{
+            state.done.add(itemId);
+            const el = document.getElementById('item-'+itemId);
+            if (el) el.classList.add('done');
+            closeModal();
+            renderProgress();
+            spawnConfetti();
+            if (state.done.size === ITEMS.length){
+              setTimeout(showFinale, 900);
+            }
+          }, 1300);
+        } else {
+          btn.classList.add('wrong');
+          sWrong();
+          setTimeout(()=>{ btn.classList.remove('wrong'); btn.disabled = false; }, 600);
+        }
+      };
+      opts.appendChild(btn);
+    });
+
+    $('modalProgress').textContent = `Загадка ${state.done.size+1} из ${ITEMS.length}`;
+    modal.classList.add('active');
+  }
+
+  function closeModal(){
+    modal.classList.remove('active');
+    state.currentItem = null;
+  }
+
+  $('hintBtn').addEventListener('click', ()=>{
+    $('hintText').classList.add('show');
+    $('hintBtn').disabled = true;
+    sClick();
+  });
+
+  function shuffle(arr){
+    const a = arr.slice();
+    for (let i=a.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      const t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  // ====== Snow + ice particles (foreground) ======
+  const snowCtx = snow.getContext('2d');
+  let snowflakes = [];
+  function initSnow(){
+    snowflakes = [];
+    const w = snow.width, h = snow.height;
+    const count = Math.max(40, Math.floor(w*h/12000));
+    for (let i=0;i<count;i++){
+      snowflakes.push({
+        x: Math.random()*w,
+        y: Math.random()*h,
+        r: Math.random()*3+1,
+        vy: Math.random()*1.4+0.4,
+        vx: Math.random()*0.6-0.3,
+        wob: Math.random()*Math.PI*2,
+        wobSpeed: Math.random()*0.02+0.008
+      });
+    }
+  }
+  function snowLoop(){
+    const w = snow.width, h = snow.height;
+    snowCtx.clearRect(0,0,w,h);
+    snowflakes.forEach(f=>{
+      f.wob += f.wobSpeed;
+      f.x += f.vx + Math.sin(f.wob)*0.4;
+      f.y += f.vy;
+      if (f.y > h+5) { f.y = -5; f.x = Math.random()*w; }
+      if (f.x < -10) f.x = w+10;
+      if (f.x > w+10) f.x = -10;
+      snowCtx.beginPath();
+      snowCtx.fillStyle = 'rgba(255,255,255,0.85)';
+      snowCtx.arc(f.x, f.y, f.r, 0, Math.PI*2);
+      snowCtx.fill();
+    });
+    // draw shards on same canvas
+    drawShards();
+    requestAnimationFrame(snowLoop);
+  }
+
+  // Ice shards on erase
+  const shards = [];
+  function spawnIceShards(cx, cy){
+    for (let i=0;i<5;i++){
+      shards.push({
+        x: cx + (Math.random()-0.5)*20,
+        y: cy + (Math.random()-0.5)*20,
+        vx: (Math.random()-0.5)*5,
+        vy: -Math.random()*5-1,
+        size: Math.random()*4+2,
+        life: 1,
+        rot: Math.random()*Math.PI,
+        rotSpeed: (Math.random()-0.5)*0.3
+      });
+    }
+  }
+  function drawShards(){
+    for (let i=shards.length-1;i>=0;i--){
+      const s = shards[i];
+      s.x += s.vx;
+      s.y += s.vy;
+      s.vy += 0.18; // gravity
+      s.life -= 0.022;
+      s.rot += s.rotSpeed;
+      if (s.life <= 0){ shards.splice(i,1); continue; }
+      snowCtx.save();
+      snowCtx.translate(s.x, s.y);
+      snowCtx.rotate(s.rot);
+      snowCtx.fillStyle = `rgba(220,240,255,${s.life})`;
+      snowCtx.strokeStyle = `rgba(150,200,255,${s.life})`;
+      snowCtx.lineWidth = 1;
+      // diamond/crystal shape
+      snowCtx.beginPath();
+      snowCtx.moveTo(0,-s.size);
+      snowCtx.lineTo(s.size*0.6,0);
+      snowCtx.lineTo(0,s.size);
+      snowCtx.lineTo(-s.size*0.6,0);
+      snowCtx.closePath();
+      snowCtx.fill();
+      snowCtx.stroke();
+      // inner shine
+      snowCtx.fillStyle = `rgba(255,255,255,${s.life*0.7})`;
+      snowCtx.beginPath();
+      snowCtx.moveTo(0,-s.size*0.5);
+      snowCtx.lineTo(s.size*0.2,0);
+      snowCtx.lineTo(0,s.size*0.3);
+      snowCtx.closePath();
+      snowCtx.fill();
+      snowCtx.restore();
+    }
+  }
+
+  // ====== Confetti ======
+  function spawnConfetti(){
+    const colors = ['#ff5252','#ffeb3b','#448aff','#69f0ae','#ff80ab','#ffd54f','#aee0ff'];
+    for (let i=0;i<60;i++){
+      const el = document.createElement('div');
+      el.className = 'confetti';
+      const isSquare = Math.random() > 0.5;
+      el.style.width = (5 + Math.random()*5) + 'px';
+      el.style.height = isSquare ? el.style.width : (8 + Math.random()*8) + 'px';
+      el.style.background = colors[Math.floor(Math.random()*colors.length)];
+      const startX = window.innerWidth/2;
+      const startY = window.innerHeight/2;
+      el.style.left = startX + 'px';
+      el.style.top = startY + 'px';
+      el.style.borderRadius = isSquare ? '2px' : '50%';
+      document.body.appendChild(el);
+      const dx = (Math.random()-0.5)*window.innerWidth*0.7;
+      const dy = (Math.random()-0.5)*window.innerHeight*0.7 - 150;
+      const rot = Math.random()*720;
+      el.animate([
+        { transform: `translate(0,0) rotate(0deg)`, opacity:1 },
+        { transform: `translate(${dx}px,${dy}px) rotate(${rot}deg)`, opacity:0 }
+      ], { duration: 1300, easing:'cubic-bezier(0.3,0.7,0.4,1)' });
+      setTimeout(()=> el.remove(), 1400);
+    }
+  }
+
+  // ====== Icicles on modal ======
+  function buildIcicles(){
+    const cont = $('icicles');
+    cont.innerHTML = '';
+    const n = 14;
+    for (let i=0;i<n;i++){
+      const ic = document.createElement('div');
+      ic.className = 'icicle';
+      cont.appendChild(ic);
+    }
+  }
+
+  // ====== Finale video ======
+  let finaleRunning = false;
+  let finaleRAF = null;
+  let fireworks = [];
+
+  function showFinale(){
+    finale.classList.add('show');
+    startFinaleAnimation();
+  }
+
+  function setupFinaleCanvas(){
+    const canvas = $('finaleCanvas');
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(100, rect.width * dpr);
+    canvas.height = Math.max(100, rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.scale(dpr, dpr);
+    return { canvas, ctx, W: rect.width, H: rect.height };
+  }
+
+  function startFinaleAnimation(){
+    if (finaleRAF) cancelAnimationFrame(finaleRAF);
+    const { ctx, W, H } = setupFinaleCanvas();
+    fireworks = [];
+    const startTime = performance.now();
+    const duration = 16000;
+    finaleRunning = true;
+    let lastLaunch = 0;
+
+    function launch(t){
+      const x = 60 + Math.random()*(W-120);
+      const y = 50 + Math.random()*H*0.45;
+      const colors = ['#ff5252','#ffeb3b','#448aff','#69f0ae','#ff80ab','#ffd54f','#aee0ff'];
+      const color = colors[Math.floor(Math.random()*colors.length)];
+      const n = 32;
+      for (let i=0;i<n;i++){
+        const angle = (Math.PI*2/n)*i;
+        const speed = 2 + Math.random()*2.5;
+        fireworks.push({
+          x, y,
+          vx: Math.cos(angle)*speed,
+          vy: Math.sin(angle)*speed,
+          color,
+          life: 1,
+          size: 2 + Math.random()*2.5,
+          trail: []
+        });
+      }
+      sFirework();
+    }
+
+    function draw(t){
+      if (!finaleRunning) return;
+      const elapsed = t - startTime;
+      const progress = Math.min(elapsed/duration, 1);
+
+      // Background gradient
+      const bg = ctx.createLinearGradient(0,0,0,H);
+      bg.addColorStop(0,'#0a0a40');
+      bg.addColorStop(0.5,'#1a1a5a');
+      bg.addColorStop(1,'#0a1030');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0,0,W,H);
+
+      // Stars
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      for (let i=0;i<60;i++){
+        const sx = (i*47 % W);
+        const sy = (i*53 % (H*0.6));
+        const tw = Math.sin(elapsed*0.003 + i)*0.5+0.5;
+        ctx.globalAlpha = tw * 0.9;
+        ctx.fillRect(sx, sy, 2, 2);
+      }
+      ctx.globalAlpha = 1;
+
+      // Festive village silhouette
+      drawFinaleVillage(ctx, W, H, elapsed);
+
+      // Falling snow
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      for (let i=0;i<35;i++){
+        const fx = (i*47 + elapsed*0.04) % W;
+        const fy = (i*31 + elapsed*0.08) % H;
+        ctx.beginPath();
+        ctx.arc(fx, fy, 1.6, 0, Math.PI*2);
+        ctx.fill();
+      }
+
+      // Launch fireworks
+      if (elapsed - lastLaunch > 750){
+        launch(elapsed);
+        lastLaunch = elapsed;
+      }
+
+      // Update fireworks
+      for (let i=fireworks.length-1;i>=0;i--){
+        const f = fireworks[i];
+        f.x += f.vx;
+        f.y += f.vy;
+        f.vy += 0.035;
+        f.vx *= 0.99;
+        f.life -= 0.014;
+        if (f.life <= 0){ fireworks.splice(i,1); continue; }
+        // trail
+        f.trail.push({x:f.x, y:f.y, life:f.life});
+        if (f.trail.length > 6) f.trail.shift();
+        // draw trail
+        for (let j=0;j<f.trail.length;j++){
+          const tp = f.trail[j];
+          ctx.globalAlpha = tp.life * 0.4;
+          ctx.fillStyle = f.color;
+          ctx.beginPath();
+          ctx.arc(tp.x, tp.y, f.size*0.6, 0, Math.PI*2);
+          ctx.fill();
+        }
+        // particle
+        ctx.globalAlpha = f.life;
+        ctx.fillStyle = f.color;
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, f.size, 0, Math.PI*2);
+        ctx.fill();
+        // glow
+        ctx.globalAlpha = f.life*0.3;
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, f.size*3.5, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      // "С Новым Годом!" text after 3.5s
+      if (elapsed > 3500){
+        const textAlpha = Math.min((elapsed-3500)/1000, 1);
+        ctx.globalAlpha = textAlpha;
+        const fontSize = Math.min(W*0.1, 72);
+        ctx.font = `bold ${fontSize}px "Comic Sans MS", cursive`;
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = '#b71c1c';
+        ctx.lineWidth = 5;
+        ctx.fillStyle = '#ffeb3b';
+        const pulse = Math.sin(elapsed*0.005)*0.05+1;
+        ctx.save();
+        ctx.translate(W/2, H*0.42);
+        ctx.scale(pulse, pulse);
+        ctx.strokeText('С Новым Годом!', 0, 0);
+        ctx.fillText('С Новым Годом!', 0, 0);
+        ctx.restore();
+        ctx.globalAlpha = 1;
+      }
+
+      // Subtitle
+      if (elapsed > 6500){
+        const sa = Math.min((elapsed-6500)/1000, 1);
+        ctx.globalAlpha = sa;
+        ctx.font = `${Math.min(W*0.045, 28)}px "Comic Sans MS", cursive`;
+        ctx.fillStyle = '#fff';
+        ctx.fillText('Ты прошёл все загадки!', W/2, H*0.52);
+        ctx.globalAlpha = 1;
+      }
+
+      // Video player progress bar (bottom)
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0, H-26, W, 26);
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      ctx.fillRect(10, H-14, W-20, 4);
+      ctx.fillStyle = '#ff5252';
+      ctx.fillRect(10, H-14, (W-20)*progress, 4);
+      ctx.fillStyle = '#fff';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'left';
+      const sec = Math.floor(elapsed/1000);
+      const totalSec = Math.floor(duration/1000);
+      ctx.fillText(`${sec}s / ${totalSec}s`, 10, H-15);
+      ctx.textAlign = 'right';
+      ctx.fillText('Новогоднее видео', W-10, H-15);
+
+      if (elapsed < duration){
+        finaleRAF = requestAnimationFrame(draw);
+      } else {
+        // Keep idle fireworks going
+        finaleRAF = requestAnimationFrame(drawIdle);
+      }
+    }
+
+    function drawIdle(t){
+      if (!finale.classList.contains('show')) { finaleRunning = false; return; }
+      // Fade trail
+      ctx.fillStyle = 'rgba(10,10,40,0.18)';
+      ctx.fillRect(0,0,W,H);
+      if (t - lastLaunch > 1100){
+        launch(t);
+        lastLaunch = t;
+      }
+      for (let i=fireworks.length-1;i>=0;i--){
+        const f = fireworks[i];
+        f.x += f.vx; f.y += f.vy;
+        f.vy += 0.035; f.vx *= 0.99;
+        f.life -= 0.012;
+        if (f.life <= 0){ fireworks.splice(i,1); continue; }
+        ctx.globalAlpha = f.life;
+        ctx.fillStyle = f.color;
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, f.size, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalAlpha = f.life*0.3;
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, f.size*3.5, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      // Persistent "С Новым Годом!" text
+      const fontSize = Math.min(W*0.1, 72);
+      ctx.font = `bold ${fontSize}px "Comic Sans MS", cursive`;
+      ctx.textAlign = 'center';
+      ctx.strokeStyle = '#b71c1c';
+      ctx.lineWidth = 5;
+      ctx.fillStyle = '#ffeb3b';
+      const pulse = Math.sin(t*0.005)*0.05+1;
+      ctx.save();
+      ctx.translate(W/2, H*0.42);
+      ctx.scale(pulse, pulse);
+      ctx.strokeText('С Новым Годом!', 0, 0);
+      ctx.fillText('С Новым Годом!', 0, 0);
+      ctx.restore();
+      ctx.font = `${Math.min(W*0.045, 28)}px "Comic Sans MS", cursive`;
+      ctx.fillStyle = '#fff';
+      ctx.fillText('Ты прошёл все загадки!', W/2, H*0.52);
+      // Progress bar full
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0, H-26, W, 26);
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      ctx.fillRect(10, H-14, W-20, 4);
+      ctx.fillStyle = '#ff5252';
+      ctx.fillRect(10, H-14, W-20, 4);
+      finaleRAF = requestAnimationFrame(drawIdle);
+    }
+
+    finaleRAF = requestAnimationFrame(draw);
+  }
+
+  function drawFinaleVillage(ctx, W, H, elapsed){
+    const baseY = H*0.85;
+    // ground
+    ctx.fillStyle = '#dce6f5';
+    ctx.fillRect(0, baseY, W, H-baseY);
+
+    // Big christmas tree
+    const treeX = W*0.18, treeBaseY = baseY;
+    ctx.fillStyle = '#1a4a1a';
+    ctx.beginPath();
+    ctx.moveTo(treeX-55, treeBaseY);
+    ctx.lineTo(treeX, treeBaseY-160);
+    ctx.lineTo(treeX+55, treeBaseY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(treeX-45, treeBaseY-50);
+    ctx.lineTo(treeX, treeBaseY-180);
+    ctx.lineTo(treeX+45, treeBaseY-50);
+    ctx.closePath();
+    ctx.fill();
+    // star on top
+    ctx.fillStyle = '#ffeb3b';
+    ctx.beginPath();
+    ctx.arc(treeX, treeBaseY-185, 5, 0, Math.PI*2);
+    ctx.fill();
+    // tree lights
+    const colors = ['#ff5252','#ffeb3b','#448aff','#69f0ae','#ff80ab'];
+    for (let i=0;i<14;i++){
+      const ly = treeBaseY - 10 - i*11;
+      const lx = treeX + Math.sin(i*0.7 + elapsed*0.005) * (35 - i*1.5);
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.globalAlpha = Math.sin(elapsed*0.01 + i)*0.5+0.7;
+      ctx.beginPath();
+      ctx.arc(lx, ly, 2.5, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Houses with lit windows
+    const houses = [
+      {x:W*0.36, w:90, h:95, c:'#8b1f1f'},
+      {x:W*0.56, w:80, h:80, c:'#3a5e22'},
+      {x:W*0.74, w:100, h:105, c:'#7030a0'}
+    ];
+    houses.forEach(hs=>{
+      ctx.fillStyle = hs.c;
+      ctx.fillRect(hs.x, baseY-hs.h, hs.w, hs.h);
+      // snowy roof
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(hs.x-6, baseY-hs.h);
+      ctx.lineTo(hs.x+hs.w/2, baseY-hs.h-18);
+      ctx.lineTo(hs.x+hs.w+6, baseY-hs.h);
+      ctx.closePath();
+      ctx.fill();
+      // windows
+      ctx.fillStyle = '#ffe082';
+      ctx.fillRect(hs.x+15, baseY-hs.h+22, 22, 22);
+      ctx.fillRect(hs.x+hs.w-37, baseY-hs.h+22, 22, 22);
+      // door
+      ctx.fillStyle = '#3e2723';
+      ctx.fillRect(hs.x+hs.w/2-11, baseY-32, 22, 32);
+      // door knob
+      ctx.fillStyle = '#ffeb3b';
+      ctx.beginPath(); ctx.arc(hs.x+hs.w/2+6, baseY-16, 2, 0, Math.PI*2); ctx.fill();
+    });
+
+    // Smaller background trees
+    ctx.fillStyle = '#1a4a1a';
+    [[0.05,60],[0.92,70],[0.96,55]].forEach(p=>{
+      const tx = W*p[0];
+      ctx.beginPath();
+      ctx.moveTo(tx-20, baseY);
+      ctx.lineTo(tx, baseY-p[1]);
+      ctx.lineTo(tx+20, baseY);
+      ctx.closePath();
+      ctx.fill();
+    });
+  }
+
+  $('replayBtn').addEventListener('click', ()=>{
+    sClick();
+    finaleRunning = false;
+    if (finaleRAF) cancelAnimationFrame(finaleRAF);
+    setTimeout(()=> startFinaleAnimation(), 50);
+  });
+  $('restartBtn').addEventListener('click', ()=>{
+    sClick();
+    location.reload();
+  });
+
+  // ====== Start ======
+  $('startBtn').addEventListener('click', ()=>{
+    ensureAudio();
+    startScreen.style.display = 'none';
+    state.started = true;
+    sClick();
+  });
+
+  // ====== Mitten follow ======
+  document.addEventListener('mousemove', e=>{
+    mitten.style.left = e.clientX + 'px';
+    mitten.style.top = e.clientY + 'px';
+  });
+  document.addEventListener('touchmove', e=>{
+    if (e.touches[0]){
+      mitten.style.left = e.touches[0].clientX + 'px';
+      mitten.style.top = e.touches[0].clientY + 'px';
+    }
+  }, {passive:true});
+
+  // ====== Frost canvas events ======
+  frost.addEventListener('mousedown', onPointerDown);
+  frost.addEventListener('mousemove', onPointerMove);
+  window.addEventListener('mouseup', onPointerUp);
+  frost.addEventListener('touchstart', e=>{ e.preventDefault(); onPointerDown(e); }, {passive:false});
+  frost.addEventListener('touchmove', e=>{ e.preventDefault(); onPointerMove(e); }, {passive:false});
+  window.addEventListener('touchend', onPointerUp);
+  window.addEventListener('touchcancel', onPointerUp);
+
+  // Prevent context menu on long-press
+  frost.addEventListener('contextmenu', e=> e.preventDefault());
+
+  // ====== Init ======
+  window.addEventListener('resize', ()=>{
+    resize();
+  });
+  window.addEventListener('orientationchange', ()=> setTimeout(resize, 200));
+
+  buildIcicles();
+  resize();
+  snowLoop();
+
+  // Hide mitten until game starts (avoid showing at 0,0)
+  mitten.style.left = '-200px';
+  mitten.style.top = '-200px';
+})();
+</script>
+</body>
+</html>
